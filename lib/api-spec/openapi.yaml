@@ -1,15 +1,18 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Rooted Insight API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: lab-results
+    description: Lab test results management
+  - name: medications
+    description: Medication tracking
 paths:
   /healthz:
     get:
@@ -24,6 +27,180 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /lab-results:
+    get:
+      operationId: getLabResults
+      tags: [lab-results]
+      summary: Get all lab results
+      responses:
+        "200":
+          description: List of lab results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LabResult"
+    post:
+      operationId: createLabResult
+      tags: [lab-results]
+      summary: Create a new lab result entry
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLabResultRequest"
+      responses:
+        "201":
+          description: Lab result created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabResult"
+
+  /lab-results/{id}:
+    get:
+      operationId: getLabResult
+      tags: [lab-results]
+      summary: Get a single lab result
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Lab result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabResult"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteLabResult
+      tags: [lab-results]
+      summary: Delete a lab result
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /lab-results/{id}/analyze:
+    post:
+      operationId: analyzeLabResult
+      tags: [lab-results]
+      summary: Analyze a lab result using AI
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LabAnalysis"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /medications:
+    get:
+      operationId: getMedications
+      tags: [medications]
+      summary: Get all medications
+      responses:
+        "200":
+          description: List of medications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Medication"
+    post:
+      operationId: createMedication
+      tags: [medications]
+      summary: Add a new medication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMedicationRequest"
+      responses:
+        "201":
+          description: Medication created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Medication"
+
+  /medications/{id}:
+    put:
+      operationId: updateMedication
+      tags: [medications]
+      summary: Update a medication
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMedicationRequest"
+      responses:
+        "200":
+          description: Updated medication
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Medication"
+    delete:
+      operationId: deleteMedication
+      tags: [medications]
+      summary: Delete a medication
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +211,243 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required:
+        - success
+
+    LabMarker:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name of the lab marker (e.g., "Vitamin D", "TSH")
+        value:
+          type: number
+          description: Numeric value of the marker
+        unit:
+          type: string
+          description: Unit of measurement (e.g., "ng/mL", "mIU/L")
+        referenceRangeLow:
+          type: number
+          nullable: true
+          description: Lower bound of normal reference range
+        referenceRangeHigh:
+          type: number
+          nullable: true
+          description: Upper bound of normal reference range
+        status:
+          type: string
+          enum: [normal, low, high, critical-low, critical-high]
+          description: Status relative to reference range
+      required:
+        - name
+        - value
+        - unit
+        - status
+
+    CreateLabResultRequest:
+      type: object
+      properties:
+        testName:
+          type: string
+          description: Name of the lab panel/test (e.g., "Comprehensive Metabolic Panel")
+        testDate:
+          type: string
+          format: date
+          description: Date the test was taken
+        labName:
+          type: string
+          nullable: true
+          description: Name of the laboratory
+        notes:
+          type: string
+          nullable: true
+          description: Optional personal notes
+        markers:
+          type: array
+          items:
+            $ref: "#/components/schemas/LabMarker"
+          description: Individual lab markers and values
+      required:
+        - testName
+        - testDate
+        - markers
+
+    LabResult:
+      type: object
+      properties:
+        id:
+          type: integer
+        testName:
+          type: string
+        testDate:
+          type: string
+          format: date
+        labName:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        markers:
+          type: array
+          items:
+            $ref: "#/components/schemas/LabMarker"
+        createdAt:
+          type: string
+          format: date-time
+        analysis:
+          $ref: "#/components/schemas/LabAnalysis"
+          nullable: true
+      required:
+        - id
+        - testName
+        - testDate
+        - markers
+        - createdAt
+
+    MarkerInsight:
+      type: object
+      properties:
+        markerName:
+          type: string
+        plainLanguageExplanation:
+          type: string
+          description: Simple explanation of what this marker means
+        significance:
+          type: string
+          description: Why this value matters
+        suggestions:
+          type: array
+          items:
+            $ref: "#/components/schemas/NaturalSuggestion"
+      required:
+        - markerName
+        - plainLanguageExplanation
+        - significance
+        - suggestions
+
+    NaturalSuggestion:
+      type: object
+      properties:
+        category:
+          type: string
+          enum: [supplement, diet, lifestyle, exercise, sleep, stress]
+        title:
+          type: string
+        description:
+          type: string
+        evidenceLevel:
+          type: string
+          enum: [strong, moderate, emerging]
+      required:
+        - category
+        - title
+        - description
+        - evidenceLevel
+
+    LabAnalysis:
+      type: object
+      properties:
+        id:
+          type: integer
+        labResultId:
+          type: integer
+        summary:
+          type: string
+          description: Overall summary in plain language
+        markerInsights:
+          type: array
+          items:
+            $ref: "#/components/schemas/MarkerInsight"
+        disclaimer:
+          type: string
+          description: Medical disclaimer
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - labResultId
+        - summary
+        - markerInsights
+        - disclaimer
+        - createdAt
+
+    CreateMedicationRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Medication name
+        dosage:
+          type: string
+          nullable: true
+          description: Dosage (e.g., "10mg")
+        frequency:
+          type: string
+          nullable: true
+          description: How often taken (e.g., "Once daily")
+        prescribedFor:
+          type: string
+          nullable: true
+          description: What condition it is prescribed for
+        prescribedBy:
+          type: string
+          nullable: true
+          description: Prescribing healthcare provider
+        startDate:
+          type: string
+          format: date
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+      required:
+        - name
+
+    Medication:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        dosage:
+          type: string
+          nullable: true
+        frequency:
+          type: string
+          nullable: true
+        prescribedFor:
+          type: string
+          nullable: true
+        prescribedBy:
+          type: string
+          nullable: true
+        startDate:
+          type: string
+          format: date
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - createdAt

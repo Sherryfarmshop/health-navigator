@@ -1,0 +1,16 @@
+packages:
+  "framer-motion": "Smooth page transitions and staggered list animations"
+  "clsx": "Utility for conditionally joining classNames"
+  "tailwind-merge": "Utility for merging tailwind classes without conflicts"
+  "date-fns": "For formatting lab result and medication dates nicely"
+  "lucide-react": "Beautiful nature/wellness appropriate icons"
+
+images:
+  - path: "artifacts/rooted-insight/public/images/hero-nature.png"
+    description: "A calming, minimal abstract background featuring soft sage greens, warm creams, and subtle organic shapes resembling misty mountains or overlapping leaves. Very airy, lots of negative space."
+    aspect_ratio: "16:9"
+
+notes:
+  - Using wouter for routing
+  - Using @workspace/api-client-react for TanStack Query hooks and Zod schemas
+  - Using framer-motion for smooth entry animations

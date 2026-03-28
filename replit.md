@@ -1,8 +1,8 @@
-# Workspace
+# Rooted Insight
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+A health literacy web application that allows users to upload/enter lab test results, get AI-powered plain-language explanations, receive evidence-based natural wellness suggestions, and track their current medications. The app is non-prescriptive and always encourages consulting a healthcare provider.
 
 ## Stack
 
@@ -10,87 +10,64 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Node.js version**: 24
 - **Package manager**: pnpm
 - **TypeScript version**: 5.9
-- **API framework**: Express 5
+- **Frontend**: React + Vite (artifacts/rooted-insight)
+- **API framework**: Express 5 (artifacts/api-server)
 - **Database**: PostgreSQL + Drizzle ORM
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
+- **AI**: OpenAI via Replit AI Integrations (gpt-5.2)
 - **Build**: esbuild (CJS bundle)
+
+## Features
+
+1. **Dashboard** - Overview of lab results and medications with summary stats
+2. **Lab Results** - List all historical lab results with status indicators
+3. **Lab Result Detail** - View individual markers with status badges (normal/low/high/critical)
+4. **AI Analysis** - Plain-language AI explanation for out-of-range markers + evidence-based natural suggestions (supplement, diet, lifestyle, etc.)
+5. **Add Lab Result** - Manually enter any lab test with multiple markers
+6. **Medications Tracker** - Add, edit, delete current medications with full details
 
 ## Structure
 
 ```text
 artifacts-monorepo/
-├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
-├── lib/                    # Shared libraries
-│   ├── api-spec/           # OpenAPI spec + Orval codegen config
-│   ├── api-client-react/   # Generated React Query hooks
-│   ├── api-zod/            # Generated Zod schemas from OpenAPI
-│   └── db/                 # Drizzle ORM schema + DB connection
-├── scripts/                # Utility scripts (single workspace package)
-│   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
-├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
-├── tsconfig.base.json      # Shared TS options (composite, bundler resolution, es2022)
-├── tsconfig.json           # Root TS project references
-└── package.json            # Root package with hoisted devDeps
+├── artifacts/
+│   ├── rooted-insight/         # React + Vite frontend (preview path: /)
+│   └── api-server/             # Express API server (preview path: /api)
+├── lib/
+│   ├── api-spec/               # OpenAPI spec + Orval codegen config
+│   ├── api-client-react/       # Generated React Query hooks
+│   ├── api-zod/                # Generated Zod schemas from OpenAPI
+│   ├── db/                     # Drizzle ORM schema + DB connection
+│   └── integrations-openai-ai-server/  # OpenAI AI integration
+├── scripts/                    # Utility scripts
+└── package.json                # Root package
 ```
 
-## TypeScript & Composite Projects
+## Database Schema
 
-Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references. This means:
+- `lab_results` — Lab test results with markers stored as JSONB
+- `lab_analyses` — AI-generated analyses linked to lab results
+- `medications` — User medication tracking
 
-- **Always typecheck from the root** — run `pnpm run typecheck` (which runs `tsc --build --emitDeclarationOnly`). This builds the full dependency graph so that cross-package imports resolve correctly. Running `tsc` inside a single package will fail if its dependencies haven't been built yet.
-- **`emitDeclarationOnly`** — we only emit `.d.ts` files during typecheck; actual JS bundling is handled by esbuild/tsx/vite...etc, not `tsc`.
-- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array. `tsc --build` uses this to determine build order and skip up-to-date packages.
+## API Routes
 
-## Root Scripts
+- `GET/POST /api/lab-results` — List/create lab results
+- `GET/DELETE /api/lab-results/:id` — Get/delete a lab result
+- `POST /api/lab-results/:id/analyze` — AI analyze a lab result
+- `GET/POST /api/medications` — List/create medications
+- `PUT/DELETE /api/medications/:id` — Update/delete a medication
 
-- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
-- `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
+## AI Integration
 
-## Packages
+Uses Replit AI Integrations (OpenAI proxy) — no user API key needed.
+- Model: gpt-5.2 for analysis
+- Analyzes lab markers and generates plain-language explanations
+- Suggests evidence-based natural options (supplements, diet, lifestyle, exercise, sleep, stress)
+- Always includes medical disclaimer
 
-### `artifacts/api-server` (`@workspace/api-server`)
+## Key Conventions
 
-Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` for request and response validation and `@workspace/db` for persistence.
-
-- Entry: `src/index.ts` — reads `PORT`, starts Express
-- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
-- Depends on: `@workspace/db`, `@workspace/api-zod`
-- `pnpm --filter @workspace/api-server run dev` — run the dev server
-- `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
-
-### `lib/db` (`@workspace/db`)
-
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
-
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`, automatically provided by Replit)
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
-
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
-
-### `lib/api-spec` (`@workspace/api-spec`)
-
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
-
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
-
-Run codegen: `pnpm --filter @workspace/api-spec run codegen`
-
-### `lib/api-zod` (`@workspace/api-zod`)
-
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
-
-### `lib/api-client-react` (`@workspace/api-client-react`)
-
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
-
-### `scripts` (`@workspace/scripts`)
-
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+- Non-prescriptive: always prompts consultation with healthcare provider
+- Educational focus: plain-language explanations for all lab values
+- Evidence levels: strong/moderate/emerging for all suggestions
