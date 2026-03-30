@@ -21,11 +21,18 @@ A health literacy web application that allows users to upload/enter lab test res
 ## Features
 
 1. **Dashboard** - Overview of lab results and medications with summary stats
-2. **Lab Results** - List all historical lab results with status indicators
+2. **Lab Results** - List all historical lab results with status indicators + color-coded trend graphs (green/yellow/red)
 3. **Lab Result Detail** - View individual markers with status badges (normal/low/high/critical)
 4. **AI Analysis** - Plain-language AI explanation for out-of-range markers + evidence-based natural suggestions (supplement, diet, lifestyle, etc.)
-5. **Add Lab Result** - Manually enter any lab test with multiple markers
-6. **Medications Tracker** - Add, edit, delete current medications with full details
+5. **Wellness Plan** (`POST /api/lab-results/:id/plan`) - AI-generated step-by-step action plan with:
+   - Color-coded priority steps (high/medium/low) with interactive checkboxes and progress bar
+   - Category icons (supplement, diet, exercise, sleep, stress, medical, monitoring)
+   - "Questions to Ask Your Doctor" section with specific value-referenced questions
+   - Copy button (copies formatted checklist to clipboard)
+   - Export in 3 styles: Simple (.txt), Checklist (.txt), Doctor's Report (PDF via print dialog)
+6. **Add Lab Result** - Manually enter any lab test with multiple markers; also supports photo upload → AI OCR extraction
+7. **Medications Tracker** - Add, edit, delete current medications; supports photo/camera scan of medication labels via AI vision
+8. **Trend Charts** - recharts line charts per marker with toggle in lab results list; traffic-light trend colors
 
 ## Structure
 

@@ -254,4 +254,99 @@ Only include markerInsights for markers that are outside the normal range (low, 
   }
 });
 
+router.post("/lab-results/:id/plan", async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+  try {
+    const [labResult] = await db
+      .select()
+      .from(labResultsTable)
+      .where(eq(labResultsTable.id, id));
+    if (!labResult) return res.status(404).json({ error: "Lab result not found" });
+
+    const [analysis] = await db
+      .select()
+      .from(labAnalysesTable)
+      .where(eq(labAnalysesTable.labResultId, id));
+
+    const markersText = (labResult.markers as any[])
+      .map(
+        (m: any) =>
+          `- ${m.name}: ${m.value} ${m.unit} (Status: ${m.status}, Reference: ${m.referenceRangeLow ?? "N/A"}-${m.referenceRangeHigh ?? "N/A"} ${m.unit})`
+      )
+      .join("\n");
+
+    const analysisContext = analysis ? `\nExisting AI Summary: ${analysis.summary}` : "";
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5.2",
+      max_completion_tokens: 4096,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a health education assistant. Create personalized, actionable wellness plans based on lab results. Be specific, practical, and always educational not prescriptive. Always recommend consulting a healthcare provider.",
+        },
+        {
+          role: "user",
+          content: `Create a step-by-step wellness action plan based on these lab results. Focus on actionable steps the person can take, including natural interventions, lifestyle changes, and when to retest.
+
+Lab Test: ${labResult.testName}
+Date: ${labResult.testDate}
+${labResult.notes ? `Notes: ${labResult.notes}` : ""}
+${analysisContext}
+
+Markers:
+${markersText}
+
+Respond with this exact JSON:
+{
+  "summary": "2-3 sentence plain-language summary of overall health picture and top priorities",
+  "steps": [
+    {
+      "id": "1",
+      "priority": "high",
+      "marker": "Vitamin D",
+      "finding": "22 ng/mL — below normal range (30-100 ng/mL)",
+      "action": "Take Vitamin D3 2000 IU daily with a meal containing healthy fats",
+      "actionDetail": "Vitamin D is critical for immune function, mood, and bone health. Taking it with fat increases absorption by up to 50%.",
+      "timeline": "Start immediately",
+      "retestIn": "3 months",
+      "category": "supplement"
+    }
+  ],
+  "questionsForDoctor": [
+    "My Vitamin D is 22 ng/mL — should I take a higher dose than the standard recommendation?",
+    "Should I test my PTH and calcium levels given my low Vitamin D?"
+  ]
+}
+
+Rules:
+- priority: "high" for critical or significantly out of range, "medium" for mildly out of range or borderline, "low" for in-range markers being monitored
+- Include steps for ALL markers that are out of range
+- For normal markers, include a brief monitoring step with priority "low"
+- retestIn: realistic timeframe like "3 months", "6 months", "1 year", or "next annual"
+- category: one of supplement, diet, lifestyle, exercise, sleep, stress, medical, monitoring
+- questionsForDoctor: 3-5 specific questions referencing actual values
+- Make action steps specific with dosages or frequencies where appropriate (educational purposes)`,
+        },
+      ],
+      response_format: { type: "json_object" },
+    });
+
+    const responseText = completion.choices[0]?.message?.content ?? "{}";
+    const parsed = JSON.parse(responseText);
+    parsed.generatedAt = new Date().toISOString().split("T")[0];
+    parsed.testName = labResult.testName;
+    parsed.testDate = labResult.testDate;
+    parsed.markers = labResult.markers;
+
+    res.json(parsed);
+  } catch (err) {
+    req.log.error({ err }, "Failed to generate wellness plan");
+    res.status(500).json({ error: "Failed to generate wellness plan. Please try again." });
+  }
+});
+
 export default router;

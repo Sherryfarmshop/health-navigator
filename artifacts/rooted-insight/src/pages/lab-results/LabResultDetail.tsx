@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { FadeIn, StaggerContainer, StaggerItem, Card, CardContent, Button, Badge } from "@/components/shared/UI";
 import { formatDate, cn } from "@/lib/utils";
 import { ArrowLeft, Trash2, Sparkles, AlertTriangle, CheckCircle2, ChevronRight, Activity, Leaf, ShieldAlert } from "lucide-react";
+import WellnessPlan from "./WellnessPlan";
 
 export default function LabResultDetail() {
   const [, params] = useRoute("/lab-results/:id");
@@ -221,6 +222,15 @@ export default function LabResultDetail() {
           </div>
         )}
       </div>
+
+      {/* Wellness Plan — full width, always available once analysis exists */}
+      {result.analysis && (
+        <FadeIn>
+          <div className="border-t border-border pt-8">
+            <WellnessPlan labResultId={id} testName={result.testName} />
+          </div>
+        </FadeIn>
+      )}
     </div>
   );
 }
