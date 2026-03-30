@@ -2,8 +2,10 @@ import { Feather } from "@expo/vector-icons";
 import { useCreateLabResult } from "@workspace/api-client-react";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Platform,
   Pressable,
@@ -24,7 +26,8 @@ interface MarkerEntry {
   name: string;
   value: string;
   unit: string;
-  referenceRange: string;
+  referenceRangeLow: string;
+  referenceRangeHigh: string;
   status: MarkerStatus;
 }
 
@@ -32,18 +35,20 @@ const STATUS_OPTIONS: { value: MarkerStatus; label: string; color: string }[] = 
   { value: "normal", label: "Normal", color: Colors.success },
   { value: "low", label: "Low", color: Colors.warning },
   { value: "high", label: "High", color: Colors.warning },
-  { value: "critical-low", label: "Critical Low", color: Colors.danger },
-  { value: "critical-high", label: "Critical High", color: Colors.danger },
+  { value: "critical-low", label: "Crit Low", color: Colors.danger },
+  { value: "critical-high", label: "Crit High", color: Colors.danger },
 ];
 
-function newMarker(): MarkerEntry {
+function newMarker(overrides?: Partial<MarkerEntry>): MarkerEntry {
   return {
     id: Date.now().toString() + Math.random().toString(36).substr(2, 6),
     name: "",
     value: "",
     unit: "",
-    referenceRange: "",
+    referenceRangeLow: "",
+    referenceRangeHigh: "",
     status: "normal",
+    ...overrides,
   };
 }
 
@@ -57,6 +62,8 @@ export default function AddLabResultScreen() {
   const [labName, setLabName] = useState("");
   const [notes, setNotes] = useState("");
   const [markers, setMarkers] = useState<MarkerEntry[]>([newMarker()]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
 
   const bottomPadding = Platform.OS === "web" ? 34 : insets.bottom;
 
@@ -74,6 +81,93 @@ export default function AddLabResultScreen() {
   const removeMarker = (id: string) => {
     if (markers.length <= 1) return;
     setMarkers((prev) => prev.filter((m) => m.id !== id));
+  };
+
+  const pickAndUploadImage = async (fromCamera: boolean) => {
+    try {
+      let result: ImagePicker.ImagePickerResult;
+      if (fromCamera) {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert("Permission Needed", "Camera access is required to take a photo.");
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ["images"],
+          quality: 0.8,
+          base64: false,
+        });
+      } else {
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ["images"],
+          quality: 0.8,
+          base64: false,
+        });
+      }
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setUploading(true);
+      setUploadSuccess(false);
+
+      const formData = new FormData();
+      formData.append("file", {
+        uri: asset.uri,
+        type: asset.mimeType ?? "image/jpeg",
+        name: "lab-report.jpg",
+      } as any);
+
+      const apiUrl = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api/lab-results/parse`;
+      const response = await fetch(apiUrl, { method: "POST", body: formData });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error ?? "Failed to read lab report");
+      }
+
+      const data = await response.json();
+
+      if (data.testName) setTestName(data.testName);
+      if (data.testDate) setTestDate(data.testDate);
+      if (data.labName) setLabName(data.labName ?? "");
+      if (data.notes) setNotes(data.notes ?? "");
+
+      if (Array.isArray(data.markers) && data.markers.length > 0) {
+        setMarkers(
+          data.markers.map((m: any) =>
+            newMarker({
+              name: m.name ?? "",
+              value: String(m.value ?? ""),
+              unit: m.unit ?? "",
+              referenceRangeLow: m.referenceRangeLow != null ? String(m.referenceRangeLow) : "",
+              referenceRangeHigh: m.referenceRangeHigh != null ? String(m.referenceRangeHigh) : "",
+              status: (m.status as MarkerStatus) ?? "normal",
+            })
+          )
+        );
+      }
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setUploadSuccess(true);
+    } catch (err: any) {
+      Alert.alert("Upload Failed", err.message ?? "Could not read the lab report. Please enter values manually.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const showImageOptions = () => {
+    if (Platform.OS === "web") {
+      Alert.alert("Not supported", "File upload is only available on mobile devices.");
+      return;
+    }
+    Alert.alert("Upload Lab Report", "Choose how to add your report", [
+      { text: "Take Photo", onPress: () => pickAndUploadImage(true) },
+      { text: "Choose from Library", onPress: () => pickAndUploadImage(false) },
+      { text: "Cancel", style: "cancel" },
+    ]);
   };
 
   const handleSubmit = () => {
@@ -104,7 +198,8 @@ export default function AddLabResultScreen() {
             name: m.name.trim(),
             value: parseFloat(m.value) || 0,
             unit: m.unit.trim() || null,
-            referenceRange: m.referenceRange.trim() || null,
+            referenceRangeLow: m.referenceRangeLow ? parseFloat(m.referenceRangeLow) : null,
+            referenceRangeHigh: m.referenceRangeHigh ? parseFloat(m.referenceRangeHigh) : null,
             status: m.status,
           })),
         },
@@ -127,6 +222,57 @@ export default function AddLabResultScreen() {
       contentContainerStyle={[styles.content, { paddingBottom: bottomPadding + 40 }]}
       bottomOffset={16}
     >
+      {/* Upload Banner */}
+      <Pressable
+        style={({ pressed }) => [
+          styles.uploadBanner,
+          uploadSuccess && styles.uploadBannerSuccess,
+          pressed && { opacity: 0.85 },
+          uploading && { opacity: 0.7 },
+        ]}
+        onPress={showImageOptions}
+        disabled={uploading}
+      >
+        {uploading ? (
+          <>
+            <ActivityIndicator size="small" color={Colors.gold} />
+            <View style={styles.uploadBannerText}>
+              <Text style={styles.uploadBannerTitle}>Reading your lab report…</Text>
+              <Text style={styles.uploadBannerSub}>AI is extracting all values</Text>
+            </View>
+          </>
+        ) : uploadSuccess ? (
+          <>
+            <View style={[styles.uploadIconWrap, { backgroundColor: Colors.success + "33" }]}>
+              <Feather name="check-circle" size={20} color={Colors.success} />
+            </View>
+            <View style={styles.uploadBannerText}>
+              <Text style={[styles.uploadBannerTitle, { color: Colors.success }]}>
+                {markers.length} markers extracted!
+              </Text>
+              <Text style={styles.uploadBannerSub}>Tap to upload a different photo</Text>
+            </View>
+          </>
+        ) : (
+          <>
+            <View style={styles.uploadIconWrap}>
+              <Feather name="camera" size={20} color={Colors.gold} />
+            </View>
+            <View style={styles.uploadBannerText}>
+              <Text style={styles.uploadBannerTitle}>Upload Lab Report Photo</Text>
+              <Text style={styles.uploadBannerSub}>AI will extract all values automatically</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color={Colors.textLight} />
+          </>
+        )}
+      </Pressable>
+
+      <View style={styles.dividerRow}>
+        <View style={styles.dividerLine} />
+        <Text style={styles.dividerText}>or enter manually</Text>
+        <View style={styles.dividerLine} />
+      </View>
+
       <Text style={styles.sectionLabel}>Test Info</Text>
       <View style={styles.card}>
         <Text style={styles.fieldLabel}>Test Name *</Text>
@@ -138,7 +284,7 @@ export default function AddLabResultScreen() {
           placeholderTextColor={Colors.textLight}
           returnKeyType="next"
         />
-        <View style={styles.divider} />
+        <View style={styles.sep} />
         <Text style={styles.fieldLabel}>Date (YYYY-MM-DD) *</Text>
         <TextInput
           style={styles.input}
@@ -148,7 +294,7 @@ export default function AddLabResultScreen() {
           placeholderTextColor={Colors.textLight}
           keyboardType="numbers-and-punctuation"
         />
-        <View style={styles.divider} />
+        <View style={styles.sep} />
         <Text style={styles.fieldLabel}>Lab Name</Text>
         <TextInput
           style={styles.input}
@@ -157,7 +303,7 @@ export default function AddLabResultScreen() {
           placeholder="e.g. Quest Diagnostics"
           placeholderTextColor={Colors.textLight}
         />
-        <View style={styles.divider} />
+        <View style={styles.sep} />
         <Text style={styles.fieldLabel}>Notes</Text>
         <TextInput
           style={[styles.input, styles.multiline]}
@@ -204,6 +350,7 @@ export default function AddLabResultScreen() {
             placeholder="e.g. Hemoglobin"
             placeholderTextColor={Colors.textLight}
           />
+
           <View style={styles.row}>
             <View style={styles.flex1}>
               <Text style={styles.fieldLabel}>Value *</Text>
@@ -227,14 +374,32 @@ export default function AddLabResultScreen() {
               />
             </View>
           </View>
-          <Text style={styles.fieldLabel}>Reference Range</Text>
-          <TextInput
-            style={styles.input}
-            value={marker.referenceRange}
-            onChangeText={(v) => updateMarker(marker.id, "referenceRange", v)}
-            placeholder="e.g. 12.0-17.5"
-            placeholderTextColor={Colors.textLight}
-          />
+
+          <View style={styles.row}>
+            <View style={styles.flex1}>
+              <Text style={styles.fieldLabel}>Ref Low</Text>
+              <TextInput
+                style={styles.input}
+                value={marker.referenceRangeLow}
+                onChangeText={(v) => updateMarker(marker.id, "referenceRangeLow", v)}
+                placeholder="Min"
+                placeholderTextColor={Colors.textLight}
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <View style={styles.flex1}>
+              <Text style={styles.fieldLabel}>Ref High</Text>
+              <TextInput
+                style={styles.input}
+                value={marker.referenceRangeHigh}
+                onChangeText={(v) => updateMarker(marker.id, "referenceRangeHigh", v)}
+                placeholder="Max"
+                placeholderTextColor={Colors.textLight}
+                keyboardType="decimal-pad"
+              />
+            </View>
+          </View>
+
           <Text style={styles.fieldLabel}>Status</Text>
           <View style={styles.statusRow}>
             {STATUS_OPTIONS.map((opt) => (
@@ -242,7 +407,10 @@ export default function AddLabResultScreen() {
                 key={opt.value}
                 style={({ pressed }) => [
                   styles.statusChip,
-                  marker.status === opt.value && { backgroundColor: opt.color + "22", borderColor: opt.color },
+                  marker.status === opt.value && {
+                    backgroundColor: opt.color + "22",
+                    borderColor: opt.color,
+                  },
                   pressed && { opacity: 0.7 },
                 ]}
                 onPress={() => updateMarker(marker.id, "status", opt.value)}
@@ -250,7 +418,10 @@ export default function AddLabResultScreen() {
                 <Text
                   style={[
                     styles.statusChipText,
-                    marker.status === opt.value && { color: opt.color, fontFamily: "Inter_600SemiBold" },
+                    marker.status === opt.value && {
+                      color: opt.color,
+                      fontFamily: "Inter_600SemiBold",
+                    },
                   ]}
                 >
                   {opt.label}
@@ -262,7 +433,11 @@ export default function AddLabResultScreen() {
       ))}
 
       <Pressable
-        style={({ pressed }) => [styles.submitBtn, pressed && { opacity: 0.85 }, isPending && { opacity: 0.6 }]}
+        style={({ pressed }) => [
+          styles.submitBtn,
+          pressed && { opacity: 0.85 },
+          isPending && { opacity: 0.6 },
+        ]}
         onPress={handleSubmit}
         disabled={isPending}
       >
@@ -283,15 +458,68 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingTop: 16,
   },
+  uploadBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: Colors.forestDark,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+  },
+  uploadBannerSuccess: {
+    backgroundColor: Colors.successLight,
+    borderWidth: 1,
+    borderColor: Colors.success + "44",
+  },
+  uploadIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: Colors.forestMid,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  uploadBannerText: {
+    flex: 1,
+  },
+  uploadBannerTitle: {
+    fontSize: 14,
+    fontWeight: "600" as const,
+    color: Colors.goldPale,
+    fontFamily: "Inter_600SemiBold",
+  },
+  uploadBannerSub: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontFamily: "Inter_400Regular",
+    marginTop: 1,
+  },
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 16,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: Colors.creamDark,
+  },
+  dividerText: {
+    fontSize: 11,
+    color: Colors.textLight,
+    fontFamily: "Inter_400Regular",
+  },
   sectionLabel: {
     fontSize: 13,
     fontWeight: "600" as const,
     color: Colors.textMid,
     fontFamily: "Inter_600SemiBold",
-    textTransform: "uppercase",
+    textTransform: "uppercase" as const,
     letterSpacing: 0.5,
     marginBottom: 8,
-    marginTop: 8,
+    marginTop: 4,
   },
   card: {
     backgroundColor: Colors.white,
@@ -323,9 +551,9 @@ const styles = StyleSheet.create({
   multiline: {
     minHeight: 64,
     borderBottomWidth: 0,
-    textAlignVertical: "top",
+    textAlignVertical: "top" as const,
   },
-  divider: {
+  sep: {
     height: 1,
     backgroundColor: Colors.creamDark,
     marginVertical: 4,
@@ -382,7 +610,7 @@ const styles = StyleSheet.create({
   },
   statusRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
+    flexWrap: "wrap" as const,
     gap: 6,
     marginTop: 8,
   },

@@ -1,10 +1,87 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
+import multer from "multer";
 import { db, labResultsTable, labAnalysesTable, insertLabResultSchema, labMarkerSchema } from "@workspace/db";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { z } from "zod/v4";
 
 const router: IRouter = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+
+router.post("/lab-results/parse", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
+
+  const mimeType = req.file.mimetype;
+  const supported = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic"];
+  if (!supported.includes(mimeType)) {
+    return res.status(400).json({ error: "Unsupported file type. Please upload a JPG, PNG, WebP, or HEIC image." });
+  }
+
+  try {
+    const base64 = req.file.buffer.toString("base64");
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5.2",
+      max_completion_tokens: 4096,
+      messages: [
+        {
+          role: "system",
+          content: "You are a precise medical data extraction assistant. Extract lab result data from images of lab reports accurately. Return only valid JSON with no markdown.",
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: { url: dataUrl, detail: "high" },
+            },
+            {
+              type: "text",
+              text: `Extract all lab test data from this image and return it as JSON with this exact structure:
+{
+  "testName": "name of the lab panel or test (e.g. Comprehensive Metabolic Panel)",
+  "testDate": "date in YYYY-MM-DD format, or today if not visible",
+  "labName": "name of laboratory if visible, or null",
+  "notes": "any relevant notes from the report, or null",
+  "markers": [
+    {
+      "name": "marker name",
+      "value": 0.0,
+      "unit": "unit string",
+      "referenceRangeLow": 0.0,
+      "referenceRangeHigh": 0.0,
+      "status": "normal|low|high|critical-low|critical-high"
+    }
+  ]
+}
+
+Rules:
+- Extract every individual marker/test value you can see
+- value must be a number (not a string)
+- referenceRangeLow and referenceRangeHigh must be numbers or null if not shown
+- status: "normal" if within range, "low" if below range, "high" if above range, "critical-low" or "critical-high" for critical flags
+- If the report shows H or L flags next to values, use "high" or "low"
+- If the report shows critical flags (HH, LL, CRIT), use "critical-high" or "critical-low"
+- testDate: extract from the report; format as YYYY-MM-DD`,
+            },
+          ],
+        },
+      ],
+    });
+
+    const responseText = completion.choices[0]?.message?.content ?? "{}";
+    const cleanText = responseText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    const parsed = JSON.parse(cleanText);
+
+    res.json(parsed);
+  } catch (err) {
+    req.log.error({ err }, "Failed to parse lab report image");
+    res.status(500).json({ error: "Failed to parse lab report. Please try again or enter values manually." });
+  }
+});
 
 router.get("/lab-results", async (req, res) => {
   try {
