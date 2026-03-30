@@ -70,6 +70,89 @@ Rules:
   }
 });
 
+router.post("/medications/interactions", async (req, res) => {
+  try {
+    const meds = await db.select().from(medicationsTable).orderBy(medicationsTable.createdAt);
+
+    if (meds.length < 2) {
+      return res.json({
+        generatedAt: new Date().toISOString().split("T")[0],
+        medications: meds.map((m) => m.name),
+        interactions: [],
+        noInteractionsFound: true,
+        summary: "Add at least 2 medications to check for interactions.",
+      });
+    }
+
+    const medList = meds
+      .map((m) => `- ${m.name}${m.dosage ? ` ${m.dosage}` : ""}${m.frequency ? `, ${m.frequency}` : ""}`)
+      .join("\n");
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5.2",
+      max_completion_tokens: 4096,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a health education assistant with pharmaceutical knowledge. Check for drug-drug and drug-supplement interactions. Be accurate, educational, and always advise consulting a healthcare provider. Never be alarmist about well-known, monitored combinations.",
+        },
+        {
+          role: "user",
+          content: `Check these medications and supplements for potential interactions with each other:
+
+${medList}
+
+Respond with this exact JSON:
+{
+  "interactions": [
+    {
+      "id": "1",
+      "severity": "serious",
+      "pair": ["Medication A", "Supplement B"],
+      "effect": "Short effect title e.g. Increased bleeding risk",
+      "mechanism": "Educational explanation of why this interaction happens and what it means for the body",
+      "watchFor": ["Symptom 1", "Symptom 2", "Symptom 3"],
+      "recommendation": "Practical advice — what to do, whether to consult doctor, what to monitor",
+      "category": "bleeding"
+    }
+  ],
+  "noInteractionsFound": false,
+  "summary": "X potential interactions found. Y serious, Z moderate."
+}
+
+Severity levels:
+- "serious": Major risk — requires immediate medical consultation (e.g. serotonin syndrome risk, severe QT prolongation)
+- "moderate": Significant — discuss with doctor, may need dose adjustment or monitoring
+- "mild": Minor — be aware, generally safe but worth noting
+- "informational": No direct risk — just useful context about timing or absorption
+
+Category options: bleeding, metabolism, absorption, cardiac, serotonin, thyroid, blood-pressure, electrolyte, sedation, effectiveness, other
+
+Rules:
+- Only include real, evidence-based interactions. Do not make up interactions.
+- If no interactions exist between any pair, set noInteractionsFound: true and interactions: []
+- Check ALL possible pairs
+- For each interaction, list only the 2 medications involved in "pair" (use exact names from the list above)
+- watchFor: 3-5 specific symptoms the person should monitor
+- recommendation: practical, empowering — tell them what to DO, not just "talk to your doctor" alone`,
+        },
+      ],
+      response_format: { type: "json_object" },
+    });
+
+    const responseText = completion.choices[0]?.message?.content ?? "{}";
+    const parsed = JSON.parse(responseText);
+    parsed.generatedAt = new Date().toISOString().split("T")[0];
+    parsed.medications = meds.map((m) => m.name);
+
+    res.json(parsed);
+  } catch (err) {
+    req.log.error({ err }, "Failed to check medication interactions");
+    res.status(500).json({ error: "Failed to check interactions. Please try again." });
+  }
+});
+
 router.get("/medications", async (req, res) => {
   try {
     const meds = await db

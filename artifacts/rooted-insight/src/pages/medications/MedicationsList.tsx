@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { FadeIn, StaggerContainer, StaggerItem, Card, CardContent, Button, Input, Label, Badge } from "@/components/shared/UI";
 import { Pill, Plus, Calendar, User, Trash2, Edit3, X, Camera, Loader2, CheckCircle, AlertCircle } from "lucide-react";
 import { formatDate } from "@/lib/utils";
+import InteractionChecker from "./InteractionChecker";
 
 const Modal = ({ isOpen, onClose, title, children }: { isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode }) => {
   if (!isOpen) return null;
@@ -215,6 +216,15 @@ export default function MedicationsList() {
             </StaggerItem>
           ))}
         </StaggerContainer>
+      )}
+
+      {/* Interaction Checker — shown whenever there are medications listed */}
+      {medications && medications.length > 0 && (
+        <FadeIn>
+          <div className="border-t border-border pt-8 mt-4">
+            <InteractionChecker medicationCount={medications.length} />
+          </div>
+        </FadeIn>
       )}
 
       <Modal isOpen={isModalOpen} onClose={closeModal} title={editingId ? "Edit Medication" : "Add Medication"}>
