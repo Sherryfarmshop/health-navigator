@@ -56,6 +56,61 @@ function statusColor(status: string) {
   return Colors.warning;
 }
 
+const STATUS_RANK: Record<string, number> = {
+  normal: 0,
+  low: 1,
+  high: 1,
+  "critical-low": 2,
+  "critical-high": 2,
+};
+
+type TrendStatus = "improving" | "worsening" | "stable-good" | "stable-caution" | "neutral";
+
+function distToRange(val: number, low: number, high: number) {
+  if (val >= low && val <= high) return 0;
+  return val < low ? low - val : val - high;
+}
+
+function getTrendStatus(trend: MarkerTrend): TrendStatus {
+  if (trend.points.length < 2) return "neutral";
+  const first = trend.points[0];
+  const last = trend.points[trend.points.length - 1];
+  const fr = STATUS_RANK[first.status] ?? 1;
+  const lr = STATUS_RANK[last.status] ?? 1;
+
+  if (trend.referenceRangeLow != null && trend.referenceRangeHigh != null) {
+    const low = trend.referenceRangeLow;
+    const high = trend.referenceRangeHigh;
+    if (lr === 0 && fr === 0) return "stable-good";
+    if (lr === 0 && fr > 0) return "improving";
+    if (lr > 0 && fr === 0) return "worsening";
+    const d1 = distToRange(first.value, low, high);
+    const d2 = distToRange(last.value, low, high);
+    if (d2 < d1 - 0.001) return "improving";
+    if (d2 > d1 + 0.001) return "worsening";
+    return "stable-caution";
+  }
+  if (lr < fr) return "improving";
+  if (lr > fr) return "worsening";
+  return lr === 0 ? "stable-good" : "stable-caution";
+}
+
+const TREND_LINE: Record<TrendStatus, string> = {
+  improving: "#16a34a",
+  "stable-good": "#16a34a",
+  "stable-caution": "#d97706",
+  worsening: "#dc2626",
+  neutral: "#C9A84C",
+};
+
+const TREND_BADGE: Record<TrendStatus, { bg: string; text: string; label: string; icon: string }> = {
+  improving:       { bg: "#dcfce7", text: "#15803d", label: "Improving", icon: "trending-up" },
+  "stable-good":   { bg: "#dcfce7", text: "#15803d", label: "Stable",    icon: "minus" },
+  "stable-caution":{ bg: "#fef3c7", text: "#92400e", label: "Monitor",   icon: "arrow-right" },
+  worsening:       { bg: "#fee2e2", text: "#991b1b", label: "Worsening", icon: "trending-down" },
+  neutral:         { bg: "#f1f5f9", text: "#64748b", label: "—",          icon: "minus" },
+};
+
 function buildTrends(labResults: LabResult[]): MarkerTrend[] {
   const byName = new Map<string, MarkerTrend>();
   const sorted = [...labResults].sort(
@@ -95,12 +150,20 @@ function buildTrends(labResults: LabResult[]): MarkerTrend[] {
 
 // ─── SVG Mini Chart ───────────────────────────────────────────────────────────
 
-function MarkerChart({ trend, width }: { trend: MarkerTrend; width: number }) {
-  const height = 90;
+function MarkerChart({
+  trend,
+  width,
+  trendStatus,
+}: {
+  trend: MarkerTrend;
+  width: number;
+  trendStatus: TrendStatus;
+}) {
+  const height = 100;
   const padX = 14;
   const padY = 14;
   const chartW = width - 2 * padX;
-  const chartH = height - 2 * padY;
+  const chartH = height - 2 * padY - 14; // leave room for date labels
 
   const vals = trend.points.map((p) => p.value);
   const refs = [trend.referenceRangeLow, trend.referenceRangeHigh].filter(
@@ -113,6 +176,8 @@ function MarkerChart({ trend, width }: { trend: MarkerTrend; width: number }) {
   const minVal = rawMin - pad;
   const maxVal = rawMax + pad;
   const range = maxVal - minVal || 1;
+
+  const lineColor = TREND_LINE[trendStatus];
 
   const toX = (i: number) =>
     padX + (trend.points.length === 1 ? chartW / 2 : (i / (trend.points.length - 1)) * chartW);
@@ -136,22 +201,29 @@ function MarkerChart({ trend, width }: { trend: MarkerTrend; width: number }) {
           y={Math.min(refY1, refY2)}
           width={chartW}
           height={Math.abs(refY2 - refY1)}
-          fill={Colors.success}
-          fillOpacity={0.1}
+          fill="#22c55e"
+          fillOpacity={0.12}
           rx={3}
         />
       )}
-      {/* Connecting line */}
+      {/* Connecting line — colored by trend */}
       {trend.points.length > 1 && (
-        <Path d={linePath} stroke={Colors.gold} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <Path
+          d={linePath}
+          stroke={lineColor}
+          strokeWidth={2.5}
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       )}
-      {/* Dots */}
+      {/* Dots colored by per-point status */}
       {trend.points.map((p, i) => (
         <Circle
           key={i}
           cx={toX(i)}
           cy={toY(p.value)}
-          r={4.5}
+          r={5}
           fill={statusColor(p.status)}
           stroke="white"
           strokeWidth={1.5}
@@ -188,6 +260,14 @@ function MarkerChart({ trend, width }: { trend: MarkerTrend; width: number }) {
 
 // ─── Trends List ──────────────────────────────────────────────────────────────
 
+const SORT_ORDER: Record<TrendStatus, number> = {
+  worsening: 0,
+  "stable-caution": 1,
+  improving: 2,
+  "stable-good": 3,
+  neutral: 4,
+};
+
 function TrendsList({
   labResults,
   chartWidth,
@@ -197,9 +277,22 @@ function TrendsList({
 }) {
   const [search, setSearch] = useState("");
   const trends = useMemo(() => buildTrends(labResults), [labResults]);
+
+  const withStatus = useMemo(
+    () => trends.map((t) => ({ trend: t, status: getTrendStatus(t) })),
+    [trends]
+  );
+
+  // Sort: worsening first, then caution, then good
+  const sorted = [...withStatus].sort(
+    (a, b) => SORT_ORDER[a.status] - SORT_ORDER[b.status]
+  );
+
   const filtered = search
-    ? trends.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()))
-    : trends;
+    ? sorted.filter(({ trend }) =>
+        trend.name.toLowerCase().includes(search.toLowerCase())
+      )
+    : sorted;
 
   if (labResults.length === 0) {
     return (
@@ -213,8 +306,30 @@ function TrendsList({
     );
   }
 
+  // Summary counts
+  const worsening = withStatus.filter((x) => x.status === "worsening").length;
+  const caution = withStatus.filter((x) => x.status === "stable-caution").length;
+  const good = withStatus.filter(
+    (x) => x.status === "improving" || x.status === "stable-good"
+  ).length;
+
   return (
     <>
+      {/* Summary chips */}
+      <View style={styles.summaryRow}>
+        {[
+          { count: good, label: "Stable/Good", bg: "#dcfce7", text: "#15803d", icon: "trending-up" as const },
+          { count: caution, label: "Monitor", bg: "#fef3c7", text: "#92400e", icon: "alert-circle" as const },
+          { count: worsening, label: "Worsening", bg: "#fee2e2", text: "#991b1b", icon: "trending-down" as const },
+        ].map(({ count, label, bg, text, icon }) => (
+          <View key={label} style={[styles.summaryChip, { backgroundColor: bg }]}>
+            <Feather name={icon} size={14} color={text} />
+            <Text style={[styles.summaryCount, { color: text }]}>{count}</Text>
+            <Text style={[styles.summaryLabel, { color: text }]}>{label}</Text>
+          </View>
+        ))}
+      </View>
+
       <View style={styles.searchWrap}>
         <Feather name="search" size={14} color={Colors.textLight} style={styles.searchIcon} />
         <TextInput
@@ -226,18 +341,33 @@ function TrendsList({
         />
       </View>
 
-      {filtered.map((trend) => {
+      {filtered.map(({ trend, status }) => {
         const latest = trend.points[trend.points.length - 1];
         const first = trend.points[0];
         const isMulti = trend.points.length > 1;
-        const delta = isMulti ? ((latest.value - first.value) / (first.value || 1)) * 100 : 0;
-        const latestColor = statusColor(latest.status);
+        const delta = isMulti
+          ? ((latest.value - first.value) / (Math.abs(first.value) || 1)) * 100
+          : 0;
+        const badge = TREND_BADGE[status];
+        const lineColor = TREND_LINE[status];
 
         return (
-          <View key={trend.name} style={styles.trendCard}>
+          <View
+            key={trend.name}
+            style={[styles.trendCard, { borderLeftWidth: 3, borderLeftColor: lineColor }]}
+          >
             <View style={styles.trendHeader}>
               <View style={styles.trendLeft}>
-                <Text style={styles.trendName}>{trend.name}</Text>
+                <View style={styles.trendNameRow}>
+                  <Text style={styles.trendName}>{trend.name}</Text>
+                  {/* Colored badge */}
+                  <View style={[styles.trendBadge, { backgroundColor: badge.bg }]}>
+                    <Feather name={badge.icon as any} size={10} color={badge.text} />
+                    <Text style={[styles.trendBadgeText, { color: badge.text }]}>
+                      {badge.label}
+                    </Text>
+                  </View>
+                </View>
                 {trend.referenceRangeLow != null && trend.referenceRangeHigh != null && (
                   <Text style={styles.trendRef}>
                     Ref: {trend.referenceRangeLow}–{trend.referenceRangeHigh} {trend.unit}
@@ -245,30 +375,18 @@ function TrendsList({
                 )}
               </View>
               <View style={styles.trendRight}>
-                <Text style={[styles.trendValue, { color: latestColor }]}>
+                <Text style={[styles.trendValue, { color: lineColor }]}>
                   {latest.value}
                   <Text style={styles.trendUnit}> {trend.unit}</Text>
                 </Text>
                 {isMulti && (
                   <View style={styles.trendDelta}>
                     <Feather
-                      name={delta > 0 ? "trending-up" : delta < 0 ? "trending-down" : "minus"}
+                      name={badge.icon as any}
                       size={10}
-                      color={delta > 0 ? Colors.warning : delta < 0 ? "#3b82f6" : Colors.textLight}
+                      color={badge.text}
                     />
-                    <Text
-                      style={[
-                        styles.trendDeltaText,
-                        {
-                          color:
-                            delta > 0
-                              ? Colors.warning
-                              : delta < 0
-                              ? "#3b82f6"
-                              : Colors.textLight,
-                        },
-                      ]}
-                    >
+                    <Text style={[styles.trendDeltaText, { color: badge.text }]}>
                       {delta > 0 ? "+" : ""}
                       {delta.toFixed(1)}%
                     </Text>
@@ -278,12 +396,12 @@ function TrendsList({
             </View>
 
             {isMulti ? (
-              <MarkerChart trend={trend} width={chartWidth} />
+              <MarkerChart trend={trend} width={chartWidth} trendStatus={status} />
             ) : (
               <View style={styles.singleReadingWrap}>
-                <View style={[styles.singleDot, { backgroundColor: latestColor }]} />
+                <View style={[styles.singleDot, { backgroundColor: lineColor }]} />
                 <Text style={styles.singleReadingText}>
-                  One reading so far — add more to see a trend
+                  One reading — add more tests to see a trend
                 </Text>
               </View>
             )}
@@ -547,6 +665,52 @@ const styles = StyleSheet.create({
   singleReadingWrap: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 16, paddingHorizontal: 4 },
   singleDot: { width: 12, height: 12, borderRadius: 6 },
   singleReadingText: { fontSize: 12, color: Colors.textLight, fontFamily: "Inter_400Regular" },
+  // Summary row
+  summaryRow: {
+    flexDirection: "row" as const,
+    gap: 8,
+    marginBottom: 12,
+  },
+  summaryChip: {
+    flex: 1,
+    flexDirection: "column" as const,
+    alignItems: "center",
+    paddingVertical: 10,
+    borderRadius: 12,
+    gap: 2,
+  },
+  summaryCount: {
+    fontSize: 18,
+    fontWeight: "700" as const,
+    fontFamily: "Inter_700Bold",
+    marginTop: 2,
+  },
+  summaryLabel: {
+    fontSize: 10,
+    fontFamily: "Inter_500Medium",
+    textAlign: "center" as const,
+  },
+  // Trend name row
+  trendNameRow: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    flexWrap: "wrap" as const,
+    gap: 6,
+    marginBottom: 2,
+  },
+  trendBadge: {
+    flexDirection: "row" as const,
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 20,
+  },
+  trendBadgeText: {
+    fontSize: 10,
+    fontFamily: "Inter_600SemiBold",
+    fontWeight: "600" as const,
+  },
   // Search
   searchWrap: {
     flexDirection: "row",
