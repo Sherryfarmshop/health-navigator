@@ -24,6 +24,10 @@ function NativeTabLayout() {
         <Icon sf={{ default: "pill", selected: "pill.fill" }} />
         <Label>Medications</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="symptoms">
+        <Icon sf={{ default: "heart.text.square", selected: "heart.text.square.fill" }} />
+        <Label>Symptoms</Label>
+      </NativeTabs.Trigger>
     </NativeTabs>
   );
 }
@@ -96,6 +100,18 @@ function ClassicTabLayout() {
               <SymbolView name="pill" tintColor={color} size={24} />
             ) : (
               <Feather name="package" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="symptoms"
+        options={{
+          title: "Symptoms",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="heart.text.square" tintColor={color} size={24} />
+            ) : (
+              <Feather name="heart" size={22} color={color} />
             ),
         }}
       />

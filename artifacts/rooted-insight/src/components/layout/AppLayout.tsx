@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Pill, LayoutDashboard, Menu, X, Leaf } from "lucide-react";
+import { Activity, Pill, LayoutDashboard, Menu, X, Leaf, HeartPulse } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logoImg from "@assets/191D941A-F70C-45AA-9730-6C4A7B02E94E_1774658820097.png";
 
@@ -12,6 +12,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { name: "Dashboard", path: "/", icon: LayoutDashboard },
     { name: "Lab Results", path: "/lab-results", icon: Activity },
     { name: "Medications", path: "/medications", icon: Pill },
+    { name: "Symptoms", path: "/symptoms", icon: HeartPulse },
   ];
 
   const toggleMenu = () => setMobileMenuOpen(!mobileMenuOpen);

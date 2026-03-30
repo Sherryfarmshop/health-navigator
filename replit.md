@@ -24,11 +24,13 @@ A health literacy web application that allows users to upload/enter lab test res
 2. **Lab Results** - List all historical lab results with status indicators + color-coded trend graphs (green/yellow/red)
 3. **Lab Result Detail** - View individual markers with status badges (normal/low/high/critical)
 4. **AI Analysis** - Plain-language AI explanation for out-of-range markers + evidence-based natural suggestions (supplement, diet, lifestyle, etc.)
-5. **Wellness Plan** (`POST /api/lab-results/:id/plan`) - AI-generated step-by-step action plan with:
-   - Color-coded priority steps (high/medium/low) with interactive checkboxes and progress bar
-   - Category icons (supplement, diet, exercise, sleep, stress, medical, monitoring)
-   - "Questions to Ask Your Doctor" section with specific value-referenced questions
-   - Copy button (copies formatted checklist to clipboard)
+5. **Symptom Tracker** (`GET/PUT /api/symptoms`) - 13 category symptom tracking across 3 groups:
+   - Core Body Systems: Energy, Brain/Mood, Digestion, Hormones, Immune System
+   - Advanced/Optional: Cardiovascular, Nervous System, Detox/Liver, Hydration/Electrolytes, Respiratory
+   - Lifestyle Inputs: Stress, Sleep Quality, Diet Habits
+   - 80+ symptoms; auto-save with 800ms debounce; stored in `symptom_profiles` table
+   - Color-coded group headers; selection summary banner; "select all / clear" per category
+6. **Wellness Plan** (continued below):
    - Export in 3 styles: Simple (.txt), Checklist (.txt), Doctor's Report (PDF via print dialog)
 6. **Add Lab Result** - Manually enter any lab test with multiple markers; also supports photo upload → AI OCR extraction
 7. **Medications Tracker** - Add, edit, delete current medications; supports photo/camera scan of medication labels via AI vision

@@ -9,6 +9,7 @@ import LabResultsList from "@/pages/lab-results/LabResultsList";
 import LabResultDetail from "@/pages/lab-results/LabResultDetail";
 import AddLabResult from "@/pages/lab-results/AddLabResult";
 import MedicationsList from "@/pages/medications/MedicationsList";
+import SymptomsPage from "@/pages/symptoms/SymptomsPage";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -30,6 +31,7 @@ function Router() {
         <Route path="/lab-results/add" component={AddLabResult} />
         <Route path="/lab-results/:id" component={LabResultDetail} />
         <Route path="/medications" component={MedicationsList} />
+        <Route path="/symptoms" component={SymptomsPage} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>
