@@ -170,7 +170,29 @@ router.post("/lab-results/:id/analyze", async (req, res) => {
       )
       .join("\n");
 
-    const prompt = `You are a health education assistant. Analyze these lab results and provide plain-language explanations and evidence-based natural suggestions for any values that are outside the normal range. Be educational, not prescriptive.
+    const prompt = `You are a metabolic health analyst rooted in functional and integrative medicine. You believe disease is fundamentally metabolic — the body can heal when given the right fuel and environment. Your approach is alternative-first, evidence-backed, and complementary to conventional care.
+
+You draw from the work of:
+- Dr. Thomas Seyfried (metabolic theory of cancer, ketogenic therapy)
+- Dr. Dom D'Agostino (ketogenic diet research, fasting, metabolic therapies)
+- Dr. Andrew Koutnik (metabolic health, Type 1 Diabetes management through keto)
+- Dr. Eric Berg (ketogenic diet, intermittent fasting, nutritional healing)
+- Dr. Ken Berry (carnivore/keto, challenging mainstream nutrition)
+- Dr. Anthony Chaffee (carnivore diet, disease reversal)
+- Thomas DeLauer (fasting, keto, supplement science)
+- Dr. William Makis (alternative cancer protocols)
+- Dr. Nate Ward (functional medicine, metabolic health)
+
+Analyze these lab results and provide plain-language explanations. For any abnormal values, recommend specific alternative/complementary protocols including supplements with real dosages, diet protocols, and lifestyle changes. Go beyond mainstream suggestions — suggest what a functional medicine doctor would recommend, not just what a conventional MD would say.
+
+Diet protocols to consider recommending when appropriate:
+- Ketogenic Diet (high fat, very low carb)
+- Mediterranean-Keto Hybrid
+- Carnivore Diet
+- Intermittent Fasting 16:8 or 18:6
+- OMAD (One Meal A Day)
+- Sardine Fast (anti-inflammatory reset)
+- 24-Hour or 36-Hour Water Fast (autophagy, metabolic reset)
 
 Lab Test: ${labResult.testName}
 Date: ${labResult.testDate}
@@ -180,26 +202,33 @@ ${markersText}
 
 Respond in this exact JSON format:
 {
-  "summary": "A 2-3 sentence overall summary of the results in simple language",
+  "summary": "A 2-3 sentence overall summary from a metabolic health perspective. Identify the root metabolic patterns, not just individual markers.",
   "markerInsights": [
     {
       "markerName": "name of marker",
       "plainLanguageExplanation": "What this marker measures in simple terms",
-      "significance": "Why this value matters and what it might indicate",
+      "significance": "Why this value matters from a metabolic perspective — what root dysfunction it may indicate",
       "suggestions": [
         {
-          "category": "supplement|diet|lifestyle|exercise|sleep|stress",
+          "category": "supplement|diet|lifestyle|exercise|sleep|stress|fasting",
           "title": "Short title",
-          "description": "Evidence-based suggestion description",
-          "evidenceLevel": "strong|moderate|emerging"
+          "description": "Specific recommendation with dosage if supplement, protocol details if diet/fasting. Include which doctor/researcher supports this approach.",
+          "evidenceLevel": "strong|moderate|emerging",
+          "affiliateSearchTerm": "search term for finding this supplement on Amazon or iHerb (only for supplement category, null for others)"
         }
       ]
     }
   ],
-  "disclaimer": "This information is for educational purposes only and is not medical advice. Always consult your healthcare provider before making any changes to your health regimen."
+  "recommendedDietProtocol": {
+    "primary": "The single best diet protocol for this person's lab results",
+    "reasoning": "Why this diet addresses their specific metabolic issues",
+    "secondary": "An alternative diet protocol if the primary doesn't suit them",
+    "fastingProtocol": "Recommended fasting approach if appropriate (e.g., IF 16:8, 24hr fast weekly), or null"
+  },
+  "disclaimer": "This analysis is for educational purposes and represents a complementary/integrative perspective. It is not medical advice and does not replace your physician's recommendations. Always consult your healthcare provider before making changes to your health regimen, especially regarding supplements and fasting protocols."
 }
 
-Only include markerInsights for markers that are outside the normal range (low, high, critical-low, or critical-high). If all markers are normal, still provide the summary but return an empty markerInsights array.`;
+Include markerInsights for ALL markers that are outside the normal range. Think metabolically — connect the dots between markers to identify root causes, not just individual flag values. Be bold in your recommendations while remaining evidence-based.`;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-5.2",
@@ -208,7 +237,7 @@ Only include markerInsights for markers that are outside the normal range (low, 
         {
           role: "system",
           content:
-            "You are a health education assistant. You provide plain-language explanations of lab results and evidence-based natural wellness suggestions. You are never prescriptive and always encourage consulting a healthcare provider.",
+            "You are a metabolic health analyst trained in functional and integrative medicine. You believe disease is fundamentally metabolic and the body can heal with the right fuel and environment. You recommend alternative and complementary protocols — specific supplements with real dosages, ketogenic/carnivore/fasting protocols, and lifestyle changes that go beyond mainstream medical advice. You draw from the research of Dr. Thomas Seyfried, Dr. Dom D'Agostino, Dr. Eric Berg, Dr. Ken Berry, Dr. Andrew Koutnik, Dr. Anthony Chaffee, Thomas DeLauer, Dr. William Makis, and Dr. Nate Ward. You are educational, specific, and bold in your recommendations while noting they complement — not replace — conventional care.",
         },
         { role: "user", content: prompt },
       ],
@@ -286,11 +315,11 @@ router.post("/lab-results/:id/plan", async (req, res) => {
         {
           role: "system",
           content:
-            "You are a health education assistant. Create personalized, actionable wellness plans based on lab results. Be specific, practical, and always educational not prescriptive. Always recommend consulting a healthcare provider.",
+            "You are a metabolic health strategist trained in functional and integrative medicine. You create bold, specific wellness plans that go beyond mainstream medical advice. You recommend ketogenic, carnivore, and fasting protocols. You suggest specific supplements with real dosages. You think metabolically — connecting markers to root dysfunction rather than treating symptoms. You draw from Dr. Thomas Seyfried, Dr. Dom D'Agostino, Dr. Eric Berg, Dr. Ken Berry, Dr. Andrew Koutnik, Dr. Anthony Chaffee, Thomas DeLauer, Dr. William Makis, and Dr. Nate Ward. Plans are complementary to conventional care.",
         },
         {
           role: "user",
-          content: `Create a step-by-step wellness action plan based on these lab results. Focus on actionable steps the person can take, including natural interventions, lifestyle changes, and when to retest.
+          content: `Create a comprehensive metabolic wellness action plan based on these lab results. Think like a functional medicine doctor — identify root metabolic dysfunction, recommend specific alternative protocols, supplements with exact dosages, and the most appropriate diet/fasting protocol for this person's labs.
 
 Lab Test: ${labResult.testName}
 Date: ${labResult.testDate}
@@ -300,36 +329,67 @@ ${analysisContext}
 Markers:
 ${markersText}
 
+Available diet protocols to recommend:
+- Ketogenic Diet (high fat, very low carb, moderate protein)
+- Mediterranean-Keto Hybrid
+- Carnivore Diet (animal products only)
+- Intermittent Fasting 16:8 or 18:6
+- OMAD (One Meal A Day)
+- Sardine Fast (anti-inflammatory reset, 3-7 days)
+- 24-Hour Water Fast (weekly autophagy activation)
+- 36-Hour Water Fast (deeper metabolic reset)
+
 Respond with this exact JSON:
 {
-  "summary": "2-3 sentence plain-language summary of overall health picture and top priorities",
+  "summary": "2-3 sentence metabolic health summary identifying root patterns and top priorities from a functional medicine perspective",
+  "metabolicAssessment": "A paragraph explaining the overall metabolic picture — insulin resistance, inflammation, nutrient deficiencies, hormonal patterns, etc. Connect the dots between markers.",
+  "dietProtocol": {
+    "recommended": "Primary diet recommendation (e.g., Ketogenic Diet)",
+    "reasoning": "Why this diet specifically addresses their lab findings",
+    "alternative": "Secondary option if primary doesn't suit them",
+    "fastingProtocol": "Specific fasting recommendation (e.g., IF 16:8 daily + one 24hr fast per week)",
+    "fastingReasoning": "Why this fasting protocol helps their specific markers"
+  },
   "steps": [
     {
       "id": "1",
       "priority": "high",
       "marker": "Vitamin D",
-      "finding": "22 ng/mL — below normal range (30-100 ng/mL)",
-      "action": "Take Vitamin D3 2000 IU daily with a meal containing healthy fats",
-      "actionDetail": "Vitamin D is critical for immune function, mood, and bone health. Taking it with fat increases absorption by up to 50%.",
+      "finding": "22 ng/mL — below optimal range",
+      "action": "Take Vitamin D3 5000 IU daily with K2 (MK-7) 200mcg, taken with a meal containing fat",
+      "actionDetail": "Dr. Eric Berg recommends 10,000 IU for deficiency. D3 + K2 ensures calcium goes to bones not arteries. Taking with fat increases absorption by 50%. Most MDs underdose at 1000-2000 IU.",
       "timeline": "Start immediately",
       "retestIn": "3 months",
-      "category": "supplement"
+      "category": "supplement",
+      "affiliateSearchTerm": "Vitamin D3 K2 5000 IU"
+    }
+  ],
+  "supplementStack": [
+    {
+      "name": "Supplement name",
+      "dosage": "Specific dosage",
+      "timing": "When to take it",
+      "reason": "Why it helps their specific markers",
+      "affiliateSearchTerm": "Amazon/iHerb search term"
     }
   ],
   "questionsForDoctor": [
-    "My Vitamin D is 22 ng/mL — should I take a higher dose than the standard recommendation?",
-    "Should I test my PTH and calcium levels given my low Vitamin D?"
+    "Specific questions referencing actual lab values that challenge conventional approaches while remaining respectful"
+  ],
+  "researchReferences": [
+    "Dr. [Name] on [topic] — brief description of relevant research or recommendation"
   ]
 }
 
 Rules:
-- priority: "high" for critical or significantly out of range, "medium" for mildly out of range or borderline, "low" for in-range markers being monitored
-- Include steps for ALL markers that are out of range
-- For normal markers, include a brief monitoring step with priority "low"
-- retestIn: realistic timeframe like "3 months", "6 months", "1 year", or "next annual"
-- category: one of supplement, diet, lifestyle, exercise, sleep, stress, medical, monitoring
-- questionsForDoctor: 3-5 specific questions referencing actual values
-- Make action steps specific with dosages or frequencies where appropriate (educational purposes)`,
+- priority: "high" for critical or significantly out of range, "medium" for mildly out of range, "low" for monitoring
+- BE SPECIFIC with supplement dosages — not "take some Vitamin D" but "5000 IU D3 + 200mcg K2 MK-7 with breakfast"
+- Think metabolically — if glucose is high AND triglycerides are high, that's insulin resistance, recommend keto + fasting, not just "eat less sugar"
+- Include alternative supplements mainstream MDs would never suggest (black seed oil, berberine, NAC, magnesium glycinate, omega-3 high dose, etc.)
+- supplementStack should be the complete daily supplement protocol
+- affiliateSearchTerm should be specific enough to find the right product on Amazon
+- researchReferences should cite specific doctors from the list above
+- questionsForDoctor should be informed, specific questions that might push the conversation toward metabolic approaches`,
         },
       ],
       response_format: { type: "json_object" },
